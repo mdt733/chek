@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic Tac Chek</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior-y: contain;
+        }
+
+        /* --- Mobile Optimization: Responsive Cell Sizing --- */
+        .board-cell, .sideboard-cell {
+            width: 18vw; height: 18vw;
+            max-width: 60px; max-height: 60px;
+            min-width: 40px; min-height: 40px;
+            border: 1px solid #9ca3af; display: flex; justify-content: center; align-items: center;
+            user-select: none; position: relative;
+            transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            touch-action: none;
+        }
+        .board-cell.dark { background-color: #d1d5db; }
+        .board-cell.light { background-color: #f9fafb; }
+        .sideboard-cell { background-color: #e5e7eb; border: 1px dashed #9ca3af; }
+
+        /* --- Mobile Optimization: Responsive Piece Font Size --- */
+        .piece {
+            font-size: clamp(1.5rem, 9vw, 2.2rem);
+            width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;
+            transition: transform 0.3s ease;
+            pointer-events: none;
+        }
+        .piece.dragging { opacity: 0.5; }
+        .pawn-reversed { transform: rotate(180deg); }
+
+        /* --- Highlighting Styles --- */
+        .highlight-movable { background-color: #d9f99d !important; box-shadow: inset 0 0 0 2px #84cc16 !important; } /* Lime-200 bg, Lime-500 border */
+        .highlight-valid { background-color: #bfdbfe !important; box-shadow: inset 0 0 0 2px #60a5fa !important; } /* Light Blue */
+        .highlight-selected { box-shadow: inset 0 0 0 3px #3b82f6 !important; } /* Blue */
+        /* Regular Hint Source: Amber border (thickness reverted to 3px) */
+        .highlight-hint-from { box-shadow: inset 0 0 0 3px #f59e0b !important; } /* Amber, 3px thickness */
+        .highlight-hint-to { background-color: #fef3c7 !important; box-shadow: inset 0 0 0 2px #f59e0b !important; } /* Light Amber */
+        /* Continuous Hint Target: Light Yellow Background */
+        .highlight-continuous-hint { background-color: #fef9c3 !important; } /* Very Light Yellow */
+        /* New: Continuous Hint Source: Dashed Yellow Border */
+        .highlight-continuous-hint-from {
+            box-shadow: inset 0 0 0 2px #facc15 !important; /* Tailwind yellow-400 */
+            border: 2px dashed #facc15 !important; /* Ensure border overrides default */
+        }
+        .highlight-win-threat {
+             background-color: #fee2e2 !important; /* Light Red */
+             box-shadow: inset 0 0 0 2px #ef4444 !important; /* Red */
+             position: relative;
+         }
+         .highlight-win-threat::after {
+            content: '!'; position: absolute; top: 1px; right: 3px;
+            font-size: clamp(0.6rem, 3vw, 0.8rem); color: #b91c1c;
+            font-weight: bold; line-height: 1;
+         }
+
+
+        .piece-W { color: #374151; } /* White pieces (AI) */
+        .piece-B { color: #111827; } /* Black pieces (Human) */
+        .sideboard-container { min-height: 65px; }
+        .sideboard-cell.placeholder { font-size: clamp(0.7rem, 3vw, 0.8rem); color: #6b7280; background-color: #f3f4f6; cursor: default; }
+        .check-warning { color: #dc2626; font-weight: bold; margin-left: 8px; }
+        button:disabled, input[type="range"]:disabled, input[type="checkbox"]:disabled + label { opacity: 0.5; cursor: not-allowed; }
+        select:disabled { opacity: 0.7; cursor: not-allowed; background-color: #e5e7eb;}
+
+        input[type="range"] {
+             width: 40vw; max-width: 150px; min-width: 100px; cursor: pointer;
+        }
+        .slider-container label { min-width: 70px; }
+        .slider-container span { min-width: 35px; text-align: right; }
+        .ai-depth-indicator { font-size: 0.8rem; color: #4b5563; margin-left: 5px;}
+        .progress-percent { font-weight: normal; margin-left: 5px; }
+
+        .toggle-switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .toggle-slider { background-color: #60a5fa; }
+        input:focus + .toggle-slider { box-shadow: 0 0 1px #60a5fa; }
+        input:checked + .toggle-slider:before { transform: translateX(20px); }
+        input:disabled + .toggle-slider { background-color: #e5e7eb; cursor: not-allowed; }
+        input:disabled + .toggle-slider:before { background-color: #9ca3af; }
+        .toggle-container label { margin-right: 8px; font-size: 0.875rem; color: #4b5563; }
+
+    </style>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-2 sm:p-4">
+    <h1 class="text-2xl sm:text-3xl font-bold mb-3 sm:mb-4 text-gray-800">Tic Tac Chek</h1>
+    <div class="flex flex-col items-center w-full max-w-md px-1 sm:px-0">
+        <div class="mb-2 w-full">
+            <p class="text-xs sm:text-sm text-center text-gray-600 mb-1">White's Pieces (AI)</p>
+            <div id="sideboard-W" class="sideboard-container flex justify-center flex-wrap gap-1 bg-gray-200 p-1 rounded border border-gray-400"> </div>
+        </div>
+        <div id="board" class="grid grid-cols-4 gap-0 border-2 border-gray-500 rounded overflow-hidden shadow-lg mb-3 sm:mb-4"></div>
+        <div class="mb-2 w-full">
+             <p class="text-xs sm:text-sm text-center text-gray-600 mb-1">Black's Pieces (You)</p>
+             <div id="sideboard-B" class="sideboard-container flex justify-center flex-wrap gap-1 bg-gray-200 p-1 rounded border border-gray-400"> </div>
+        </div>
+        <div class="mt-3 sm:mt-4 p-3 sm:p-4 bg-white rounded shadow w-full">
+            <div id="status" class="text-base sm:text-lg font-semibold text-center mb-1 text-gray-700 h-7 flex items-center justify-center flex-wrap">
+                <span id="turn-status">Black's Turn (You)</span>
+                <span id="check-status" class="check-warning"></span>
+                <span id="ai-last-depth" class="ai-depth-indicator"></span>
+            </div>
+             <div id="thinking-indicator" class="text-center text-blue-600 mt-1 mb-2 h-5 font-semibold text-sm sm:text-base"></div>
+             <div class="slider-container flex justify-center items-center space-x-2 mb-3">
+                 <label for="difficulty-slider" class="text-sm font-medium text-gray-600">Difficulty:</label>
+                 <input type="range" id="difficulty-slider" min="0" max="100" value="75">
+                 <span id="difficulty-value" class="text-sm font-medium text-gray-700">5.0</span>
+             </div>
+             <div class="toggle-container flex justify-center items-center mb-3">
+                 <label for="continuous-hint-toggle">Continuous Hint:</label>
+                 <label class="toggle-switch">
+                     <input type="checkbox" id="continuous-hint-toggle">
+                     <span class="toggle-slider"></span>
+                 </label>
+             </div>
+             <div class="flex flex-wrap justify-center gap-2">
+                 <button id="hint-button" class="px-4 py-3 min-h-[44px] bg-yellow-500 text-white rounded hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400 transition duration-150 ease-in-out text-sm">Hint</button>
+                 <button id="undo-button" class="px-4 py-3 min-h-[44px] bg-gray-500 text-white rounded hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition duration-150 ease-in-out text-sm">Undo</button>
+                 <button id="restart-button" class="px-4 py-3 min-h-[44px] bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out text-sm">Restart Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Constants ---
+        const BOARD_SIZE = 4;
+        const PIECES = Object.freeze({ W: Object.freeze({ R: '♖', B: '♗', N: '♘', P: '♙' }), B: Object.freeze({ R: '♜', B: '♝', N: '♞', P: '♟' }) });
+        const STARTING_PIECES = Object.freeze(['R', 'B', 'N', 'P']);
+        const PLAYERS = Object.freeze({ HUMAN: 'B', AI: 'W' });
+        const PAWN_FORWARD_DIR = Object.freeze({ W: 1, B: -1 });
+
+        // --- Tunable Parameters ---
+        const MAX_DEPTH = 5;
+        const HINT_DEPTH = 4;
+        const CONTINUOUS_HINT_DEPTH = 2;
+        // Increased standard deviation for more variability
+        const AI_DEPTH_STD_DEV = 1.0;
+
+        // Evaluation constants
+        const WIN_SCORE = 10000; const THREE_IN_ROW_SCORE = 500; const BLOCK_THREE_SCORE = 1000;
+        const TWO_IN_ROW_SCORE = 50; const BLOCK_TWO_SCORE = 100; const MATERIAL_SCORE_FACTOR = 1;
+        const AI_MIN_THINK_TIME = 300;
+        const AI_MOVE_DELAY = 400;
+        const HINT_HIGHLIGHT_DURATION = 1500;
+
+        // --- Game State ---
+        let boardState = null; let sideboardState = null; let currentPlayer = null;
+        let gameOver = false; let winner = null;
+        let aiSettings = { targetDepth: 5.0 };
+        let lastAiDepthUsed = null;
+        let previousGameState = null;
+        let draggedElement = null; let dragSourceInfo = null;
+        let isAiThinking = false;
+        let isHintInProgress = false;
+        let hintTimeoutId = null;
+        let selectedPieceInfo = null;
+        let isContinuousHintEnabled = false;
+        let currentWinningThreats = [];
+
+        // --- DOM Elements ---
+        const boardElement = document.getElementById('board');
+        const sideboardElements = { W: document.getElementById('sideboard-W'), B: document.getElementById('sideboard-B') };
+        const statusElement = document.getElementById('status');
+        const turnStatusElement = document.getElementById('turn-status');
+        const checkStatusElement = document.getElementById('check-status');
+        const aiLastDepthIndicator = document.getElementById('ai-last-depth');
+        const restartButton = document.getElementById('restart-button');
+        const difficultySlider = document.getElementById('difficulty-slider');
+        const difficultyValueSpan = document.getElementById('difficulty-value');
+        const hintButton = document.getElementById('hint-button');
+        const undoButton = document.getElementById('undo-button');
+        const thinkingIndicator = document.getElementById('thinking-indicator');
+        const continuousHintToggle = document.getElementById('continuous-hint-toggle');
+
+        // --- Utility Functions ---
+        function cloneBoard(board) { /* ... (no changes) ... */ return board.map(row => row.map(cell => { if (typeof cell === 'object' && cell !== null) { return { ...cell }; } return cell; })); }
+        function cloneSideboards(sideboards) { /* ... (no changes) ... */ return { W: [...sideboards.W], B: [...sideboards.B] }; }
+        function isWithinBounds(r, c) { /* ... (no changes) ... */ return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE; }
+        function getPieceType(piece) { /* ... (no changes) ... */ if (typeof piece === 'object' && piece !== null) { return piece.type; } else if (typeof piece === 'string' && piece.length === 2) { return piece.substring(1); } return ''; }
+        function getPiecePlayer(piece) { /* ... (no changes) ... */ if (typeof piece === 'object' && piece !== null) { return piece.player; } else if (typeof piece === 'string' && piece.length === 2) { return piece.substring(0, 1); } return ''; }
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        /** Gaussian random number generator (Box-Muller transform) */
+        function gaussianRandom(mean, stdDev) { /* ... (no changes) ... */ let u1, u2; do { u1 = Math.max(Number.EPSILON, Math.random()); u2 = Math.random(); } while (u1 === 0); const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2); return z0 * stdDev + mean; }
+
+
+        // --- Game Logic ---
+        // (No changes needed in initGame)
+        function initGame() { boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)); sideboardState = { W: [...STARTING_PIECES].map(type => 'W' + type), B: [...STARTING_PIECES].map(type => 'B' + type) }; currentPlayer = PLAYERS.HUMAN; gameOver = false; winner = null; isAiThinking = false; isHintInProgress = false; previousGameState = null; lastAiDepthUsed = null; selectedPieceInfo = null; draggedElement = null; dragSourceInfo = null; currentWinningThreats = []; if(aiLastDepthIndicator) aiLastDepthIndicator.textContent = ''; clearAllHighlights(); updateTargetDepthFromSlider(); renderBoard(); updateStatus(); updateMovableHighlights(); thinkingIndicator.textContent = ''; updateButtonStates(); if (isContinuousHintEnabled) showContinuousHints(); }
+
+        // --- Difficulty Logic ---
+        /** Calculates actual search depth using Gaussian distribution */
+        function calculateActualDepth(targetDepth) { /* ... (no changes) ... */ const rawDepth = gaussianRandom(targetDepth, AI_DEPTH_STD_DEV); const clampedDepth = Math.max(0, Math.min(MAX_DEPTH, rawDepth)); const finalDepth = Math.round(clampedDepth); return finalDepth; }
+        /** Reads slider, calculates target depth (0.0 to MAX_DEPTH), updates display */
+        function updateTargetDepthFromSlider() { /* ... (no changes) ... */ if (!difficultySlider || !difficultyValueSpan) return; const sliderValue = parseInt(difficultySlider.value, 10); const continuousTargetDepth = (sliderValue / 100) * MAX_DEPTH; aiSettings.targetDepth = Math.max(0, Math.min(MAX_DEPTH, continuousTargetDepth)); difficultyValueSpan.textContent = aiSettings.targetDepth.toFixed(1); }
+
+        // --- Move Validation & Generation ---
+        // (No changes needed in isOpponent, getValidMovesForPiece, getValidPlacements, getAllValidMoves)
+        function isOpponent(r, c, player, board) { const targetPiece = board[r]?.[c]; return targetPiece !== null && getPiecePlayer(targetPiece) !== player; }
+        function getValidMovesForPiece(pieceData, r, c, board) { const moves = []; const player = getPiecePlayer(pieceData); const type = getPieceType(pieceData); if (!player || !type) return moves; const pieceString = (typeof pieceData === 'object') ? `${pieceData.player}${pieceData.type}` : pieceData; const addMoveIfValid = (nr, nc) => { if (isWithinBounds(nr, nc)) { const target = board[nr]?.[nc]; if (target === null || isOpponent(nr, nc, player, board)) { moves.push({ type: 'move', piece: pieceString, from: { r, c }, to: { r: nr, c: nc } }); } } }; const addSlidingMoves = (dr, dc) => { for (let i = 1; ; i++) { const nr = r + i * dr; const nc = c + i * dc; if (!isWithinBounds(nr, nc)) break; const target = board[nr]?.[nc]; if (target === null) { moves.push({ type: 'move', piece: pieceString, from: { r, c }, to: { r: nr, c: nc } }); } else { if (isOpponent(nr, nc, player, board)) { moves.push({ type: 'move', piece: pieceString, from: { r, c }, to: { r: nr, c: nc } }); } break; } } }; switch (type) { case 'P': if (typeof pieceData !== 'object') { console.error("Pawn move calculation error: pieceData is not an object", pieceData); return moves; } const currentDirection = pieceData.dir; const forwardR = r + currentDirection; const forwardC = c; if (isWithinBounds(forwardR, forwardC) && board[forwardR]?.[forwardC] === null) { moves.push({ type: 'move', piece: pieceString, from: { r, c }, to: { r: forwardR, c: forwardC } }); } const captureTargets = [ { r: r + currentDirection, c: c - 1 }, { r: r + currentDirection, c: c + 1 } ]; captureTargets.forEach(target => { if (isWithinBounds(target.r, target.c) && isOpponent(target.r, target.c, player, board)) { moves.push({ type: 'move', piece: pieceString, from: { r, c }, to: { r: target.r, c: target.c } }); } }); break; case 'R': addSlidingMoves(1, 0); addSlidingMoves(-1, 0); addSlidingMoves(0, 1); addSlidingMoves(0, -1); break; case 'B': addSlidingMoves(1, 1); addSlidingMoves(1, -1); addSlidingMoves(-1, 1); addSlidingMoves(-1, -1); break; case 'N': const knightMoves = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]]; knightMoves.forEach(([dr, dc]) => addMoveIfValid(r + dr, c + dc)); break; default: console.error("Unknown piece type:", type, pieceString); } return moves; }
+        function getValidPlacements(player, board, sideboards) { const placements = []; const availablePieces = sideboards[player]; if (!availablePieces || availablePieces.length === 0) return []; for (let r = 0; r < BOARD_SIZE; r++) { for (let c = 0; c < BOARD_SIZE; c++) { if (board[r][c] === null) { availablePieces.forEach((piece, index) => { if (piece && getPiecePlayer(piece) === player) { placements.push({ type: 'place', piece: piece, index: index, to: { r, c } }); } }); } } } return placements; }
+        function getAllValidMoves(player, board, sideboards) { let allMoves = []; if (!board || !sideboards) return []; for (let r = 0; r < BOARD_SIZE; r++) { for (let c = 0; c < BOARD_SIZE; c++) { const pieceData = board[r][c]; if (pieceData !== null && getPiecePlayer(pieceData) === player) { allMoves = allMoves.concat(getValidMovesForPiece(pieceData, r, c, board)); } } } allMoves = allMoves.concat(getValidPlacements(player, board, sideboards)); return allMoves; }
+
+        // --- Move Execution & Game State Checks ---
+        // (No changes needed in makeMove, undoMove, checkWinCondition, checkDrawCondition, hasWinningThreat)
+        function makeMove(move, board, sideboards) { if (!move || !move.type || !move.piece || !move.to || !board || !sideboards) return undefined; let capturedPiece = null; const { type, piece: pieceString, to } = move; const player = getPiecePlayer(pieceString); const pieceType = getPieceType(pieceString); if (type === 'move') { const { from } = move; if (!from || typeof from.r !== 'number' || typeof from.c !== 'number') return undefined; const pieceData = board[from.r][from.c]; if (!pieceData || getPiecePlayer(pieceData) !== player) { console.error("makeMove error: No or wrong piece found at source", from, pieceData); return undefined; } capturedPiece = board[to.r][to.c]; board[from.r][from.c] = null; let pieceToPlace = pieceData; if (typeof pieceData === 'object' && pieceData.type === 'P') { const opponentBackRank = (player === 'W') ? BOARD_SIZE - 1 : 0; const homeRank = (player === 'W') ? 0 : BOARD_SIZE - 1; let newDir = pieceData.dir; if (to.r === opponentBackRank) { newDir = -PAWN_FORWARD_DIR[player]; } else if (to.r === homeRank && pieceData.dir !== PAWN_FORWARD_DIR[player]) { newDir = PAWN_FORWARD_DIR[player]; } pieceToPlace = { ...pieceData, dir: newDir }; } board[to.r][to.c] = pieceToPlace; if (capturedPiece !== null) { const capturedPlayer = getPiecePlayer(capturedPiece); const capturedPieceString = `${capturedPlayer}${getPieceType(capturedPiece)}`; if (sideboards[capturedPlayer]) { sideboards[capturedPlayer].push(capturedPieceString); } else { console.error("Sideboard missing for captured player:", capturedPlayer); } } } else if (type === 'place') { const { index } = move; if (typeof index !== 'number' || index < 0) return undefined; if (sideboards[player] && sideboards[player].length > index && sideboards[player][index] === pieceString) { let pieceToPlace; if (pieceType === 'P') { pieceToPlace = { type: 'P', player: player, dir: PAWN_FORWARD_DIR[player] }; } else { pieceToPlace = pieceString; } board[to.r][to.c] = pieceToPlace; sideboards[player].splice(index, 1); capturedPiece = null; } else { return undefined; } } else { return undefined; } return capturedPiece; }
+        function undoMove(move, board, sideboards, capturedPieceData) { if (!move || !move.type || !move.piece || !move.to || !board || !sideboards) return; const { type, piece: pieceString, to } = move; const player = getPiecePlayer(pieceString); if (type === 'move') { const { from } = move; if (!from || typeof from.r !== 'number' || typeof from.c !== 'number') return; const movedPieceData = board[to.r][to.c]; if (!movedPieceData) { console.error("Undo error: No piece found at destination", to); return; } board[to.r][to.c] = capturedPieceData; board[from.r][from.c] = movedPieceData; if (capturedPieceData !== null) { const capturedPlayer = getPiecePlayer(capturedPieceData); const capturedPieceString = `${capturedPlayer}${getPieceType(capturedPieceData)}`; if (sideboards[capturedPlayer]) { const indexToRemove = sideboards[capturedPlayer].lastIndexOf(capturedPieceString); if (indexToRemove > -1) sideboards[capturedPlayer].splice(indexToRemove, 1); else console.error("Undo error: Captured piece string not in sideboard", capturedPieceString); } else { console.error("Undo error: Sideboard missing for captured player", capturedPlayer); } } } else if (type === 'place') { const placedPieceData = board[to.r][to.c]; if (!placedPieceData || getPiecePlayer(placedPieceData) !== player || getPieceType(placedPieceData) !== getPieceType(pieceString)) { console.error("Undo error: Mismatch in placed piece data", placedPieceData, pieceString); board[to.r][to.c] = null; if (sideboards[player]) sideboards[player].push(pieceString); return; } board[to.r][to.c] = null; if (sideboards[player]) { sideboards[player].push(pieceString); } else { console.error("Undo error: Sideboard missing for player", player); } } else { console.error("Undo error: Unknown move type", move.type); } }
+        function checkWinCondition(board) { if (!board || board.length !== BOARD_SIZE || !board.every(row => row && row.length === BOARD_SIZE)) return null; const lines = []; for (let r = 0; r < BOARD_SIZE; r++) lines.push(board[r]); for (let c = 0; c < BOARD_SIZE; c++) lines.push(board.map(row => row[c])); lines.push(board.map((row, i) => row[i])); lines.push(board.map((row, i) => row[BOARD_SIZE - 1 - i])); for (const line of lines) { if (!line || line.length !== BOARD_SIZE) continue; let firstPlayer = null; let playerCount = 0; let lineComplete = true; for (const piece of line) { if (piece === null) { lineComplete = false; break; } const player = getPiecePlayer(piece); if (firstPlayer === null) { firstPlayer = player; } if (player === firstPlayer) { playerCount++; } else { lineComplete = false; break; } } if (lineComplete && playerCount === BOARD_SIZE && firstPlayer !== null) { return firstPlayer; } } return null; }
+        function checkDrawCondition(player, board, sideboards) { if (!player || !board || !sideboards) return false; return checkWinCondition(board) === null && getAllValidMoves(player, board, sideboards).length === 0; }
+        function hasWinningThreat(player, board) { if (!player || !board) return false; const lines = []; for (let r = 0; r < BOARD_SIZE; r++) lines.push(board[r]); for (let c = 0; c < BOARD_SIZE; c++) lines.push(board.map(row => row[c])); lines.push(board.map((row, i) => row[i])); lines.push(board.map((row, i) => row[BOARD_SIZE - 1 - i])); for (const line of lines) { if (!line || line.length !== BOARD_SIZE) continue; let playerCount = 0; let emptyCount = 0; let linePlayer = null; for (const piece of line) { if (piece === null) { emptyCount++; } else { const currentPiecePlayer = getPiecePlayer(piece); if (linePlayer === null) linePlayer = currentPiecePlayer; if (currentPiecePlayer === player && currentPiecePlayer === linePlayer) playerCount++; else if (currentPiecePlayer !== player) { playerCount = -1; break; } } } if (playerCount === 3 && emptyCount === 1) return true; } return false; }
+
+        // --- AI Logic ---
+        // (No changes needed in evaluateBoard, minimax, findBestMove)
+        function evaluateBoard(board, sideboards, aiPlayer) { if (!board || !sideboards || !aiPlayer) return 0; const opponent = aiPlayer === 'W' ? 'B' : 'W'; const win = checkWinCondition(board); if (win === aiPlayer) return WIN_SCORE; if (win === opponent) return -WIN_SCORE; if (checkDrawCondition(aiPlayer, board, sideboards) || checkDrawCondition(opponent, board, sideboards)) return 0; let lineScore = 0; const lines = []; for (let r = 0; r < BOARD_SIZE; r++) lines.push(board[r]); for (let c = 0; c < BOARD_SIZE; c++) lines.push(board.map(row => row[c])); lines.push(board.map((row, i) => row[i])); lines.push(board.map((row, i) => row[BOARD_SIZE - 1 - i])); for (const line of lines) { if (!line || line.length !== BOARD_SIZE) continue; let aiCount = 0; let opponentCount = 0; let emptyCount = 0; for (const piece of line) { if (piece === null) emptyCount++; else if (getPiecePlayer(piece) === aiPlayer) aiCount++; else opponentCount++; } if (opponentCount === 0) { if (aiCount === 3 && emptyCount === 1) lineScore += THREE_IN_ROW_SCORE; else if (aiCount === 2 && emptyCount === 2) lineScore += TWO_IN_ROW_SCORE; } if (aiCount === 0) { if (opponentCount === 3 && emptyCount === 1) lineScore -= BLOCK_THREE_SCORE; else if (opponentCount === 2 && emptyCount === 2) lineScore -= BLOCK_TWO_SCORE; } } let materialScore = 0; let aiPieceCount = 0; let humanPieceCount = 0; for (let r = 0; r < BOARD_SIZE; r++) { for (let c = 0; c < BOARD_SIZE; c++) { const piece = board[r][c]; if (piece) { if (getPiecePlayer(piece) === aiPlayer) aiPieceCount++; else humanPieceCount++; } } } const aiSideboardCount = sideboards[aiPlayer]?.length || 0; const humanSideboardCount = sideboards[opponent]?.length || 0; materialScore += (aiPieceCount + aiSideboardCount) * MATERIAL_SCORE_FACTOR; materialScore -= (humanPieceCount + humanSideboardCount) * MATERIAL_SCORE_FACTOR; return lineScore + materialScore; }
+        function minimax(board, sideboards, depth, alpha, beta, maximizingPlayer, aiPlayer) { if (!board || !sideboards || typeof depth !== 'number' || !aiPlayer) return 0; const opponent = aiPlayer === 'W' ? 'B' : 'W'; const currentPlayerTurn = maximizingPlayer ? aiPlayer : opponent; const score = evaluateBoard(board, sideboards, aiPlayer); if (Math.abs(score) >= WIN_SCORE || depth === 0 || checkDrawCondition(currentPlayerTurn, board, sideboards)) { return score; } const validMoves = getAllValidMoves(currentPlayerTurn, board, sideboards); if (validMoves.length === 0) return evaluateBoard(board, sideboards, aiPlayer); if (maximizingPlayer) { let maxEval = -Infinity; for (const move of validMoves) { const boardCopy = cloneBoard(board); const sideboardsCopy = cloneSideboards(sideboards); const captured = makeMove(move, boardCopy, sideboardsCopy); if (captured !== undefined) { const evaluation = minimax(boardCopy, sideboardsCopy, depth - 1, alpha, beta, false, aiPlayer); maxEval = Math.max(maxEval, evaluation); alpha = Math.max(alpha, evaluation); if (beta <= alpha) break; } } return maxEval; } else { let minEval = Infinity; for (const move of validMoves) { const boardCopy = cloneBoard(board); const sideboardsCopy = cloneSideboards(sideboards); const captured = makeMove(move, boardCopy, sideboardsCopy); if (captured !== undefined) { const evaluation = minimax(boardCopy, sideboardsCopy, depth - 1, alpha, beta, true, aiPlayer); minEval = Math.min(minEval, evaluation); beta = Math.min(beta, evaluation); if (beta <= alpha) break; } } return minEval; } }
+        function findBestMove(board, sideboards, player, depth) { if (!board || !sideboards || !player || typeof depth !== 'number') return null; let bestMove = null; let bestValue = (player === PLAYERS.AI) ? -Infinity : Infinity; let alpha = -Infinity; let beta = Infinity; const validMoves = getAllValidMoves(player, board, sideboards); if (validMoves.length === 0) return null; if (depth === 0) { return validMoves[Math.floor(Math.random() * validMoves.length)]; } for (const move of validMoves) { const boardCopy = cloneBoard(board); const sideboardsCopy = cloneSideboards(sideboards); const captured = makeMove(move, boardCopy, sideboardsCopy); if (captured !== undefined) { const isNextPlayerMaximizing = (player === PLAYERS.HUMAN); const boardValue = minimax(boardCopy, sideboardsCopy, depth - 1, alpha, beta, isNextPlayerMaximizing, PLAYERS.AI); if (player === PLAYERS.AI) { if (boardValue > bestValue) { bestValue = boardValue; bestMove = move; } alpha = Math.max(alpha, boardValue); } else { if (boardValue < bestValue) { bestValue = boardValue; bestMove = move; } beta = Math.min(beta, boardValue); } } } if (!bestMove && validMoves.length > 0) { console.warn(`${player === PLAYERS.AI ? 'AI' : 'Hint/Human'} couldn't find a valid simulated move, picking first available.`); return validMoves[0]; } return bestMove; }
+
+
+        // --- UI Rendering and Interaction ---
+        // (No changes needed in renderBoard, createPieceElement)
+        function renderBoard() { if (!boardElement || !sideboardElements.W || !sideboardElements.B || !boardState || !sideboardState) return; boardElement.innerHTML = ''; boardElement.removeEventListener('click', handleCellTap); boardElement.addEventListener('click', handleCellTap); for (let r = 0; r < BOARD_SIZE; r++) { for (let c = 0; c < BOARD_SIZE; c++) { const cell = document.createElement('div'); cell.classList.add('board-cell', (r + c) % 2 === 0 ? 'light' : 'dark'); cell.dataset.r = String(r); cell.dataset.c = String(c); const pieceData = boardState[r]?.[c]; if (pieceData) { const pieceElement = createPieceElement(pieceData, 'board', { r, c }); if (pieceElement) cell.appendChild(pieceElement); } cell.addEventListener('dragover', handleDragOver); cell.addEventListener('drop', handleDrop); cell.addEventListener('dragleave', handleDragLeave); boardElement.appendChild(cell); } } ['W', 'B'].forEach(player => { const sbElement = sideboardElements[player]; if (!sbElement) return; sbElement.innerHTML = ''; sbElement.removeEventListener('click', handleCellTap); if (player === PLAYERS.HUMAN) { sbElement.addEventListener('click', handleCellTap); } const playerSideboard = sideboardState[player] || []; playerSideboard.forEach((pieceString, index) => { const cell = document.createElement('div'); cell.classList.add('sideboard-cell'); cell.dataset.player = player; cell.dataset.index = String(index); const pieceElement = createPieceElement(pieceString, 'sideboard', { player, index }); if (pieceElement) { cell.appendChild(pieceElement); sbElement.appendChild(cell); } }); if (playerSideboard.length === 0) { const placeholder = document.createElement('div'); placeholder.classList.add('sideboard-cell', 'placeholder'); placeholder.textContent = 'Empty'; sbElement.appendChild(placeholder); } }); updateMovableHighlights(); }
+        function createPieceElement(pieceData, originType, originData) { const player = getPiecePlayer(pieceData); const type = getPieceType(pieceData); const pieceString = `${player}${type}`; if (!player || !type || !PIECES[player] || !PIECES[player][type]) { console.error("Invalid piece data in createPieceElement:", pieceData); return null; } const pieceElement = document.createElement('div'); pieceElement.classList.add('piece', `piece-${player}`); pieceElement.textContent = PIECES[player][type]; pieceElement.draggable = (player === PLAYERS.HUMAN && currentPlayer === PLAYERS.HUMAN && !isAiThinking && !isHintInProgress && !gameOver); pieceElement.dataset.piece = pieceString; pieceElement.dataset.originType = originType; if (type === 'P' && typeof pieceData === 'object') { if (pieceData.dir !== PAWN_FORWARD_DIR[player]) { pieceElement.classList.add('pawn-reversed'); } } if (originType === 'board') { if (typeof originData?.r !== 'number' || typeof originData?.c !== 'number') return null; pieceElement.dataset.originR = String(originData.r); pieceElement.dataset.originC = String(originData.c); } else if (originType === 'sideboard') { if (originData?.player !== player || typeof originData?.index !== 'number') return null; pieceElement.dataset.originPlayer = originData.player; pieceElement.dataset.originIndex = String(originData.index); } else { return null; } if (pieceElement.draggable) { pieceElement.addEventListener('dragstart', handleDragStart); pieceElement.addEventListener('dragend', handleDragEnd); } return pieceElement; }
+
+        /** Updates status text, checks for win threats, shows continuous hints. */
+        function updateStatus(isCheck = false) { /* ... (no changes) ... */ if (!statusElement || !turnStatusElement || !checkStatusElement) return; checkStatusElement.textContent = ''; clearWinningThreatHighlights(); if (gameOver) { if (winner === 'Draw') { turnStatusElement.textContent = "It's a Draw!"; statusElement.className = 'text-base sm:text-lg font-semibold text-center mb-1 text-gray-600 h-7 flex items-center justify-center flex-wrap'; } else { const winnerName = winner === PLAYERS.HUMAN ? 'You (Black)' : 'AI (White)'; const winnerColorClass = winner === PLAYERS.HUMAN ? 'text-green-600' : 'text-red-600'; turnStatusElement.textContent = `${winnerName} Wins!`; statusElement.className = `text-base sm:text-lg font-semibold text-center mb-1 ${winnerColorClass} h-7 flex items-center justify-center flex-wrap`; } if(aiLastDepthIndicator) aiLastDepthIndicator.textContent = ''; clearSelectionAndHighlights(); clearContinuousHints(); } else { const turnName = currentPlayer === PLAYERS.HUMAN ? 'Your Turn (Black)' : "AI's Turn (White)"; turnStatusElement.textContent = turnName; statusElement.className = 'text-base sm:text-lg font-semibold text-center mb-1 text-gray-700 h-7 flex items-center justify-center flex-wrap'; if (isCheck) checkStatusElement.textContent = 'Check!'; if (currentPlayer === PLAYERS.HUMAN && lastAiDepthUsed !== null && aiLastDepthIndicator) { aiLastDepthIndicator.textContent = `(AI Depth: ${lastAiDepthUsed})`; } else if (aiLastDepthIndicator) { aiLastDepthIndicator.textContent = ''; } if (currentPlayer === PLAYERS.HUMAN) { checkForAiWinThreat(); if (isContinuousHintEnabled) { showContinuousHints(); } else { clearContinuousHints(); } } else { clearContinuousHints(); clearWinningThreatHighlights(); } } updateButtonStates(); }
+        /** Central function to manage button/slider/toggle states */
+        function updateButtonStates() { /* ... (no changes) ... */ const canUndo = previousGameState !== null && !isAiThinking && !gameOver && !isHintInProgress && !selectedPieceInfo; const canHint = currentPlayer === PLAYERS.HUMAN && !isAiThinking && !gameOver && !isHintInProgress && !selectedPieceInfo; const canInteractGame = !isAiThinking && !gameOver && !isHintInProgress; const canAdjustDifficulty = !isAiThinking && !isHintInProgress && !gameOver; const canToggleContinuousHint = !isAiThinking && !isHintInProgress && !gameOver; if (undoButton) undoButton.disabled = !canUndo; if (hintButton) hintButton.disabled = !canHint; if (difficultySlider) difficultySlider.disabled = !canAdjustDifficulty; if (continuousHintToggle) continuousHintToggle.disabled = !canToggleContinuousHint; if (restartButton) restartButton.disabled = isAiThinking || isHintInProgress; document.querySelectorAll('.piece').forEach(p => { const piecePlayer = getPiecePlayer(p.dataset.piece); p.draggable = (piecePlayer === PLAYERS.HUMAN && currentPlayer === PLAYERS.HUMAN && canInteractGame && !selectedPieceInfo); p.removeEventListener('dragstart', handleDragStart); p.removeEventListener('dragend', handleDragEnd); if (p.draggable) { p.addEventListener('dragstart', handleDragStart); p.addEventListener('dragend', handleDragEnd); } }); }
+        /** Highlights valid destination cells for a given source piece. */
+        function highlightValidMoves(sourceInfo) { /* ... (no changes) ... */ clearHighlights(false, false, false); if (!currentPlayer || !boardState || !sideboardState || !sourceInfo) return; const validMoves = getAllValidMoves(currentPlayer, boardState, sideboardState); let pieceValidTargets = []; try { if (sourceInfo.originType === 'board') { const fromR = sourceInfo.originR; const fromC = sourceInfo.originC; if (typeof fromR !== 'number' || typeof fromC !== 'number' || isNaN(fromR) || isNaN(fromC)) return; pieceValidTargets = validMoves.filter(m => m.type === 'move' && m.from?.r === fromR && m.from?.c === fromC).map(m => m.to); } else if (sourceInfo.originType === 'sideboard') { const piece = sourceInfo.piece; const index = sourceInfo.originIndex; if (typeof index !== 'number' || isNaN(index)) return; pieceValidTargets = validMoves.filter(m => m.type === 'place' && m.piece === piece && m.index === index).map(m => m.to); } } catch (error) { console.error("Error calculating valid targets:", error); return; } pieceValidTargets.forEach(target => { if (target && typeof target.r === 'number' && typeof target.c === 'number') { const cell = boardElement.querySelector(`[data-r="${target.r}"][data-c="${target.c}"]`); if (cell) cell.classList.add('highlight-valid'); } }); }
+
+        // --- Drag & Drop Handlers ---
+        // (No changes needed in handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop)
+        function handleDragStart(e) { if (selectedPieceInfo || gameOver || isAiThinking || isHintInProgress || currentPlayer !== PLAYERS.HUMAN) { e.preventDefault(); return; } const pieceElement = e.target.closest('.piece'); if (!pieceElement || !pieceElement.dataset.piece || !pieceElement.draggable) { e.preventDefault(); return; } const piece = pieceElement.dataset.piece; if (getPiecePlayer(piece) !== currentPlayer) { e.preventDefault(); return; } draggedElement = pieceElement; const originType = pieceElement.dataset.originType; let parsedSourceInfo = { piece: piece, originType: originType }; if (originType === 'board') { parsedSourceInfo.originR = parseInt(pieceElement.dataset.originR, 10); parsedSourceInfo.originC = parseInt(pieceElement.dataset.originC, 10); if (isNaN(parsedSourceInfo.originR) || isNaN(parsedSourceInfo.originC)) { e.preventDefault(); return; } } else if (originType === 'sideboard') { parsedSourceInfo.originIndex = parseInt(pieceElement.dataset.originIndex, 10); parsedSourceInfo.originPlayer = pieceElement.dataset.originPlayer; if (isNaN(parsedSourceInfo.originIndex) || parsedSourceInfo.originPlayer !== currentPlayer) { e.preventDefault(); return; } } else { e.preventDefault(); return; } dragSourceInfo = parsedSourceInfo; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', piece); } catch (err) { /* Ignore */ } setTimeout(() => { if (draggedElement) draggedElement.classList.add('dragging'); }, 0); highlightValidMoves(dragSourceInfo); const cell = draggedElement.closest('.board-cell, .sideboard-cell'); if (cell) { cell.classList.add('highlight-selected'); cell.classList.remove('highlight-movable'); } }
+        function handleDragEnd(e) { if (draggedElement) { draggedElement.classList.remove('dragging'); } draggedElement = null; dragSourceInfo = null; clearHighlights(false, false, false); updateMovableHighlights(); }
+        function handleDragOver(e) { e.preventDefault(); const targetCell = e.target.closest('.board-cell'); if (targetCell && targetCell.classList.contains('highlight-valid') && dragSourceInfo) { e.dataTransfer.dropEffect = 'move'; } else { e.dataTransfer.dropEffect = 'none'; } }
+        function handleDragLeave(e) { /* No action */ }
+        function handleDrop(e) { e.preventDefault(); e.stopPropagation(); if (selectedPieceInfo || gameOver || isAiThinking || isHintInProgress || !dragSourceInfo) { return; } const targetCell = e.target.closest('.board-cell'); if (!targetCell || !targetCell.classList.contains('highlight-valid')) { return; } const toR = parseInt(targetCell.dataset.r, 10); const toC = parseInt(targetCell.dataset.c, 10); if (isNaN(toR) || isNaN(toC)) { return; } const move = findMoveForSelection(dragSourceInfo, toR, toC); if (move) { executePlayerMove(move); } else { console.error("Could not find matching move for drop."); } }
+
+
+        // --- Tap Interaction Handlers ---
+        // (No changes needed in handleCellTap, selectPiece, clearSelectionAndHighlights, findMoveForSelection)
+        function handleCellTap(event) { if (gameOver || isAiThinking || currentPlayer !== PLAYERS.HUMAN || isHintInProgress || draggedElement) return; const tappedCell = event.target.closest('.board-cell, .sideboard-cell'); if (!tappedCell) { if (selectedPieceInfo) { clearSelectionAndHighlights(); } return; } if (tappedCell.closest('#sideboard-W')) { if (selectedPieceInfo) clearSelectionAndHighlights(); return; } const pieceElement = tappedCell.querySelector('.piece'); const pieceData = pieceElement ? pieceElement.dataset.piece : null; const piecePlayer = pieceData ? getPiecePlayer(pieceData) : null; const isBoardCell = tappedCell.classList.contains('board-cell'); const targetR = isBoardCell ? parseInt(tappedCell.dataset.r, 10) : NaN; const targetC = isBoardCell ? parseInt(tappedCell.dataset.c, 10) : NaN; if (selectedPieceInfo) { if (isBoardCell && tappedCell.classList.contains('highlight-valid') && !isNaN(targetR) && !isNaN(targetC)) { const move = findMoveForSelection(selectedPieceInfo, targetR, targetC); if (move) { executePlayerMove(move); } else { console.error("Could not find matching move for tap selection."); clearSelectionAndHighlights(); } } else { const tappedSamePiece = (selectedPieceInfo.element === tappedCell); clearSelectionAndHighlights(); if (!tappedSamePiece && piecePlayer === currentPlayer) { selectPiece(tappedCell, pieceElement); } } } else { if (piecePlayer === currentPlayer) { selectPiece(tappedCell, pieceElement); } } }
+        function selectPiece(cellElement, pieceElement) { clearSelectionAndHighlights(); clearContinuousHints(); clearWinningThreatHighlights(); const piece = pieceElement.dataset.piece; const originType = pieceElement.dataset.originType; let parsedSourceInfo = { piece: piece, originType: originType, element: cellElement }; if (originType === 'board') { parsedSourceInfo.originR = parseInt(pieceElement.dataset.originR, 10); parsedSourceInfo.originC = parseInt(pieceElement.dataset.originC, 10); if (isNaN(parsedSourceInfo.originR) || isNaN(parsedSourceInfo.originC)) { console.error("Invalid board piece data for tap"); return; } } else if (originType === 'sideboard') { parsedSourceInfo.originIndex = parseInt(pieceElement.dataset.originIndex, 10); parsedSourceInfo.originPlayer = pieceElement.dataset.originPlayer; if (isNaN(parsedSourceInfo.originIndex) || parsedSourceInfo.originPlayer !== PLAYERS.HUMAN) { console.error("Invalid sideboard piece data for tap"); return; } } else { return; } selectedPieceInfo = parsedSourceInfo; cellElement.classList.add('highlight-selected'); cellElement.classList.remove('highlight-movable'); highlightValidMoves(selectedPieceInfo); updateButtonStates(); }
+        function clearSelectionAndHighlights() { if (selectedPieceInfo && selectedPieceInfo.element) { selectedPieceInfo.element.classList.remove('highlight-selected'); } selectedPieceInfo = null; clearHighlights(false, false, false); updateMovableHighlights(); updateButtonStates(); if (isContinuousHintEnabled && currentPlayer === PLAYERS.HUMAN && !gameOver && !isAiThinking) { showContinuousHints(); checkForAiWinThreat();} }
+        function findMoveForSelection(selectionInfo, targetR, targetC) { if (!selectionInfo) return null; const validMoves = getAllValidMoves(currentPlayer, boardState, sideboardState); if (selectionInfo.originType === 'board') { return validMoves.find(m => m.type === 'move' && m.piece === selectionInfo.piece && m.from?.r === selectionInfo.originR && m.from?.c === selectionInfo.originC && m.to?.r === targetR && m.to?.c === targetC); } else if (selectionInfo.originType === 'sideboard') { return validMoves.find(m => m.type === 'place' && m.piece === selectionInfo.piece && m.index === selectionInfo.originIndex && m.to?.r === targetR && m.to?.c === targetC); } return null; }
+
+        // --- Common Player Move Execution ---
+        function executePlayerMove(move) { /* ... (no changes) ... */ if (!move) return; previousGameState = { board: cloneBoard(boardState), sideboards: cloneSideboards(sideboardState), player: currentPlayer }; const captured = makeMove(move, boardState, sideboardState); clearSelectionAndHighlights(); clearHintHighlight(); clearContinuousHints(); clearWinningThreatHighlights(); if (captured === undefined) { console.error("Player Move/Placement failed in execution."); previousGameState = null; renderBoard(); updateStatus(); } else { const nextPlayer = PLAYERS.AI; renderBoard(); const gameWinner = checkWinCondition(boardState); let isDraw = !gameWinner && checkDrawCondition(nextPlayer, boardState, sideboardState); let isCheck = !gameWinner && !isDraw && hasWinningThreat(nextPlayer, boardState); if (gameWinner) { gameOver = true; winner = gameWinner; updateStatus(); clearAllHighlights(); } else if (isDraw) { gameOver = true; winner = 'Draw'; updateStatus(); clearAllHighlights(); } else { currentPlayer = nextPlayer; updateStatus(isCheck); updateMovableHighlights(); triggerAiMove(); } } }
+
+
+        // --- Highlighting Logic ---
+        // (No changes needed in updateMovableHighlights)
+        function updateMovableHighlights() { document.querySelectorAll('.highlight-movable').forEach(cell => cell.classList.remove('highlight-movable')); if (gameOver || isAiThinking || isHintInProgress || selectedPieceInfo || currentPlayer !== PLAYERS.HUMAN) { return; } const validMoves = getAllValidMoves(currentPlayer, boardState, sideboardState); const movableSources = new Set(); validMoves.forEach(move => { if (move.type === 'move') { movableSources.add(`board-${move.from.r}-${move.from.c}`); } else if (move.type === 'place') { movableSources.add(`sideboard-${move.piece}-${move.index}`); } }); movableSources.forEach(sourceId => { const parts = sourceId.split('-'); let cell = null; if (parts[0] === 'board') { cell = boardElement.querySelector(`[data-r="${parts[1]}"][data-c="${parts[2]}"]`); } else if (parts[0] === 'sideboard') { const player = getPiecePlayer(parts[1]); const index = parseInt(parts[2], 10); cell = sideboardElements[PLAYERS.HUMAN]?.querySelector(`[data-player='${PLAYERS.HUMAN}'][data-index='${index}']`); const cellPieceEl = cell?.querySelector('.piece'); if (!cellPieceEl || cellPieceEl.dataset.piece !== parts[1]) { cell = null; } } if (cell && !cell.classList.contains('highlight-selected')) { cell.classList.add('highlight-movable'); } }); }
+
+        /** Clears specified highlights. Defaults clear most types except continuous/threat. */
+        function clearHighlights(clearMovable = true, clearHints = true, clearSelection = true, clearContinuous = false, clearThreat = false) {
+            const selectors = [];
+            if (clearSelection) selectors.push('.highlight-selected');
+            if (clearMovable) selectors.push('.highlight-movable');
+            // Clear both regular and continuous hint sources/targets if clearHints is true
+            if (clearHints) selectors.push('.highlight-hint-from', '.highlight-hint-to', '.highlight-continuous-hint-from', '.highlight-continuous-hint');
+            // Clear continuous hints separately if requested
+            if (clearContinuous) {
+                 if (!selectors.includes('.highlight-continuous-hint-from')) selectors.push('.highlight-continuous-hint-from');
+                 if (!selectors.includes('.highlight-continuous-hint')) selectors.push('.highlight-continuous-hint');
+            }
+            if (clearThreat) selectors.push('.highlight-win-threat');
+             // Always clear valid move highlights when clearing others that depend on it
+             if (clearSelection || clearHints || clearContinuous) {
+                if (!selectors.includes('.highlight-valid')) selectors.push('.highlight-valid');
+             }
+
+
+            if (selectors.length === 0) return;
+            const queryString = selectors.join(', ');
+
+            document.querySelectorAll('#board .board-cell, #sideboard-W .sideboard-cell, #sideboard-B .sideboard-cell')
+                .forEach(cell => {
+                    selectors.forEach(selector => {
+                         const className = selector.substring(1); // Remove leading '.'
+                         if (cell.classList.contains(className)) {
+                             cell.classList.remove(className);
+                         }
+                    });
+                });
+        }
+        /** Clears all highlights including continuous and threats */
+        function clearAllHighlights() { clearHighlights(true, true, true, true, true); }
+        /** Clears only the single hint highlights and timeout. */
+        function clearHintHighlight() { /* ... (no changes) ... */ if (hintTimeoutId) clearTimeout(hintTimeoutId); hintTimeoutId = null; document.querySelectorAll('.highlight-hint-from, .highlight-hint-to').forEach(cell => { cell.classList.remove('highlight-hint-from', 'highlight-hint-to'); }); }
+
+        // --- New Feature: Continuous Hint ---
+        /** Clears continuous hint highlights (both source and target) */
+        function clearContinuousHints() {
+            clearHighlights(false, false, false, true, false); // Clear only continuous hint classes
+        }
+
+        /** Finds and highlights the best move source and destination for the player */
+        function showContinuousHints() {
+            if (gameOver || isAiThinking || isHintInProgress || currentPlayer !== PLAYERS.HUMAN || selectedPieceInfo) {
+                clearContinuousHints();
+                return;
+            }
+            clearContinuousHints(); // Clear previous continuous hints
+
+            const hintMove = findBestMove(boardState, sideboardState, PLAYERS.HUMAN, CONTINUOUS_HINT_DEPTH);
+
+            if (hintMove) {
+                // Find and highlight source cell
+                let sourceCell = null;
+                if (hintMove.type === 'move') {
+                    sourceCell = boardElement.querySelector(`[data-r="${hintMove.from.r}"][data-c="${hintMove.from.c}"]`);
+                } else { // 'place'
+                    sourceCell = sideboardElements[PLAYERS.HUMAN].querySelector(`[data-player='${PLAYERS.HUMAN}'][data-index='${hintMove.index}']`);
+                    // Safety check: Ensure piece matches if sideboard order could change
+                    const sourcePieceEl = sourceCell?.querySelector('.piece');
+                    if(!sourcePieceEl || sourcePieceEl.dataset.piece !== hintMove.piece) {
+                        console.warn("Continuous Hint source piece mismatch!"); sourceCell = null;
+                    }
+                }
+                if (sourceCell) {
+                    sourceCell.classList.add('highlight-continuous-hint-from'); // Apply dashed yellow border
+                }
+
+                // Find and highlight target cell
+                if (hintMove.to) {
+                    const targetCell = boardElement.querySelector(`[data-r="${hintMove.to.r}"][data-c="${hintMove.to.c}"]`);
+                    if (targetCell) {
+                        targetCell.classList.add('highlight-continuous-hint'); // Apply light yellow background
+                    }
+                }
+            }
+        }
+
+        // --- New Feature: AI Winning Threat ---
+        /** Clears winning threat highlights */
+        function clearWinningThreatHighlights() { clearHighlights(false, false, false, false, true); currentWinningThreats = []; }
+        /** Checks if AI has a winning move available and highlights the square(s) */
+        function checkForAiWinThreat() { /* ... (no changes) ... */ clearWinningThreatHighlights(); if (gameOver || currentPlayer !== PLAYERS.HUMAN) return; const aiMoves = getAllValidMoves(PLAYERS.AI, boardState, sideboardState); const threats = []; for (const move of aiMoves) { const boardCopy = cloneBoard(boardState); const sideboardsCopy = cloneSideboards(sideboardState); const captured = makeMove(move, boardCopy, sideboardsCopy); if (captured !== undefined) { if (checkWinCondition(boardCopy) === PLAYERS.AI) { threats.push(move.to); } } } currentWinningThreats = threats; currentWinningThreats.forEach(threatPos => { const cell = boardElement.querySelector(`[data-r="${threatPos.r}"][data-c="${threatPos.c}"]`); if (cell) { cell.classList.add('highlight-win-threat'); } }); }
+
+
+        // --- AI Turn Trigger ---
+        async function triggerAiMove() { /* ... (no changes) ... */ if (gameOver || !thinkingIndicator || currentPlayer !== PLAYERS.AI) return; isAiThinking = true; updateStatus(); updateMovableHighlights(); thinkingIndicator.textContent = 'AI is thinking...'; const startTime = Date.now(); await delay(50); const actualDepth = calculateActualDepth(aiSettings.targetDepth); lastAiDepthUsed = actualDepth; let bestMove = null; let bestValue = -Infinity; let alpha = -Infinity; let beta = Infinity; const validMoves = getAllValidMoves(PLAYERS.AI, boardState, sideboardState); if (validMoves.length === 0) { console.log("AI has no valid moves."); lastAiDepthUsed = null; if (checkDrawCondition(PLAYERS.AI, boardState, sideboardState)) { gameOver = true; winner = 'Draw'; } else { gameOver = true; winner = 'Draw'; console.error("AI no moves, not draw? Ending game."); } isAiThinking = false; updateStatus(); updateButtonStates(); thinkingIndicator.textContent = ''; clearAllHighlights(); return; } if (actualDepth === 0) { bestMove = validMoves[Math.floor(Math.random() * validMoves.length)]; thinkingIndicator.textContent = 'AI is thinking... (Depth 0)'; await delay(AI_MIN_THINK_TIME); } else { for (let i = 0; i < validMoves.length; i++) { const move = validMoves[i]; const boardCopy = cloneBoard(boardState); const sideboardsCopy = cloneSideboards(sideboardState); const captured = makeMove(move, boardCopy, sideboardsCopy); if (captured !== undefined) { const boardValue = minimax(boardCopy, sideboardsCopy, actualDepth - 1, alpha, beta, false, PLAYERS.AI); if (boardValue > bestValue) { bestValue = boardValue; bestMove = move; } alpha = Math.max(alpha, boardValue); } const progressPercent = Math.round(((i + 1) / validMoves.length) * 100); thinkingIndicator.innerHTML = `AI is thinking... <span class="progress-percent">(${progressPercent}%)</span>`; await delay(0); } const elapsedTime = Date.now() - startTime; const remainingDelay = Math.max(0, AI_MIN_THINK_TIME - elapsedTime); if (remainingDelay > 0) await delay(remainingDelay); } thinkingIndicator.textContent = ''; if (!bestMove && validMoves.length > 0) { console.error("AI couldn't find best move, picking first."); bestMove = validMoves[0]; } if (bestMove) { clearHighlights(false, false, false, true, true); let sourceCell = null; if (bestMove.type === 'move') { sourceCell = boardElement.querySelector(`[data-r="${bestMove.from.r}"][data-c="${bestMove.from.c}"]`); } else { sourceCell = sideboardElements[PLAYERS.AI].querySelector(`[data-index="${bestMove.index}"]`); } const targetCell = boardElement.querySelector(`[data-r="${bestMove.to.r}"][data-c="${bestMove.to.c}"]`); if (sourceCell) sourceCell.classList.add('highlight-selected'); if (targetCell) targetCell.classList.add('highlight-valid'); await delay(AI_MOVE_DELAY); clearAllHighlights(); const captured = makeMove(bestMove, boardState, sideboardState); if (captured === undefined) { console.error("AI failed move/placement op:", bestMove); gameOver = true; turnStatusElement.textContent = "AI move failed!"; lastAiDepthUsed = null; } else { const nextPlayer = PLAYERS.HUMAN; renderBoard(); const gameWinner = checkWinCondition(boardState); let isDraw = !gameWinner && checkDrawCondition(nextPlayer, boardState, sideboardState); let isCheck = !gameWinner && !isDraw && hasWinningThreat(nextPlayer, boardState); if (gameWinner) { gameOver = true; winner = gameWinner; } else if (isDraw) { gameOver = true; winner = 'Draw'; } if (!gameOver) { currentPlayer = nextPlayer; } } } isAiThinking = false; updateStatus(); updateMovableHighlights(); updateButtonStates(); if (gameOver) clearAllHighlights(); }
+
+        // --- Feature Handlers (Undo, Hint) ---
+        // (No changes needed in handleUndo, handleHint)
+        function handleUndo() { if (gameOver || isAiThinking || isHintInProgress || !previousGameState || selectedPieceInfo) return; boardState = previousGameState.board; sideboardState = previousGameState.sideboards; currentPlayer = previousGameState.player; previousGameState = null; gameOver = false; winner = null; lastAiDepthUsed = null; if(aiLastDepthIndicator) aiLastDepthIndicator.textContent = ''; clearAllHighlights(); renderBoard(); updateStatus(); updateMovableHighlights(); thinkingIndicator.textContent = ''; updateButtonStates(); if (isContinuousHintEnabled) showContinuousHints(); checkForAiWinThreat(); }
+        async function handleHint() { if (gameOver || isAiThinking || isHintInProgress || currentPlayer !== PLAYERS.HUMAN || selectedPieceInfo) return; isHintInProgress = true; updateButtonStates(); thinkingIndicator.textContent = 'Finding hint...'; clearAllHighlights(); await delay(50); let hintMove = null; try { hintMove = findBestMove(boardState, sideboardState, PLAYERS.HUMAN, HINT_DEPTH); } catch(error) { console.error("Error finding hint:", error); } thinkingIndicator.textContent = ''; isHintInProgress = false; updateButtonStates(); if (hintMove) { let sourceCell = null; if (hintMove.type === 'move') { sourceCell = boardElement.querySelector(`[data-r="${hintMove.from.r}"][data-c="${hintMove.from.c}"]`); } else { sourceCell = sideboardElements[PLAYERS.HUMAN].querySelector(`[data-player='${PLAYERS.HUMAN}'][data-index='${hintMove.index}']`); const sourcePieceEl = sourceCell?.querySelector('.piece'); if(!sourcePieceEl || sourcePieceEl.dataset.piece !== hintMove.piece) { console.error("Hint source piece mismatch!"); sourceCell = null; } } const targetCell = boardElement.querySelector(`[data-r="${hintMove.to.r}"][data-c="${hintMove.to.c}"]`); if (sourceCell) sourceCell.classList.add('highlight-hint-from'); if (targetCell) targetCell.classList.add('highlight-hint-to'); hintTimeoutId = setTimeout(() => { clearHintHighlight(); if (isContinuousHintEnabled) showContinuousHints(); checkForAiWinThreat(); }, HINT_HIGHLIGHT_DURATION); } else { thinkingIndicator.textContent = 'No hint available.'; setTimeout(() => { if(thinkingIndicator.textContent === 'No hint available.') thinkingIndicator.textContent = ''; if (isContinuousHintEnabled) showContinuousHints(); checkForAiWinThreat(); }, 2000); } }
+
+        // --- Event Listeners & Init ---
+        // (No changes needed in listeners)
+         if (restartButton) restartButton.addEventListener('click', initGame);
+         if (difficultySlider) difficultySlider.addEventListener('input', updateTargetDepthFromSlider);
+         if (undoButton) undoButton.addEventListener('click', handleUndo);
+         if (hintButton) hintButton.addEventListener('click', handleHint);
+         if (continuousHintToggle) { continuousHintToggle.addEventListener('change', (event) => { isContinuousHintEnabled = event.target.checked; if (isContinuousHintEnabled && currentPlayer === PLAYERS.HUMAN && !gameOver && !isAiThinking && !selectedPieceInfo) { showContinuousHints(); } else { clearContinuousHints(); } }); }
+         document.addEventListener('DOMContentLoaded', () => { try { updateTargetDepthFromSlider(); if(continuousHintToggle) continuousHintToggle.checked = isContinuousHintEnabled; initGame(); } catch (error) { console.error("Error during initial game setup:", error); if (statusElement) { statusElement.textContent = "Error loading game!"; statusElement.style.color = 'red'; } if(restartButton) restartButton.disabled = true; if(difficultySlider) difficultySlider.disabled = true; if(undoButton) undoButton.disabled = true; if(hintButton) hintButton.disabled = true; if(continuousHintToggle) continuousHintToggle.disabled = true; } });
+
+    </script>
+
+</body>
+</html>
